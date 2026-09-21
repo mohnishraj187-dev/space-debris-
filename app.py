@@ -1,4 +1,4 @@
-import json, math, random, csv, io, zipfile
+import json, math, random, csv, io, zipfile, os
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
@@ -57,7 +57,12 @@ DATA_ZIP=Path(__file__).parent/"data"/"Collision Avoidance Challenge - Dataset.z
 INNER_TRAIN="Collision Avoidance Challenge - Dataset/kelvins_competition_data/train_data.zip"
 def dataset_events(limit=30):
     events=[]
-    if not DATA_ZIP.exists(): return events
+    if not DATA_ZIP.exists():
+        sample=Path(__file__).parent/"data"/"sample_events.csv"
+        if sample.exists():
+            with sample.open() as f:
+                for row in csv.DictReader(f): events.append(row)
+        return events[:limit]
     with zipfile.ZipFile(DATA_ZIP) as outer:
         with outer.open(INNER_TRAIN) as nested_bytes:
             nested=zipfile.ZipFile(io.BytesIO(nested_bytes.read()))
@@ -97,5 +102,6 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self,*args): pass
 
 if __name__=="__main__":
-    print("OrbitalGuard running at http://127.0.0.1:8000")
-    HTTPServer(("127.0.0.1",8000),Handler).serve_forever()
+    port=int(os.environ.get("PORT", "8000"))
+    print(f"OrbitalGuard running on port {port}")
+    HTTPServer(("0.0.0.0",port),Handler).serve_forever()

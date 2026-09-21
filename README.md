@@ -15,6 +15,10 @@ python3 app.py
 
 Open http://127.0.0.1:8000 in a browser.
 
+## Deploy on Render
+
+The repository includes `render.yaml`. In Render, choose **New → Blueprint**, connect the GitHub repository, and select the `render.yaml` file. Render will run `python3 app.py` and provide a public URL.
+
 The prototype uses only the Python standard library. It creates synthetic training cases, trains 31 small randomized decision trees, and evaluates a user-selected conjunction.
 
 ## Important scope note
