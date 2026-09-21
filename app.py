@@ -67,15 +67,19 @@ def dataset_events(limit=30):
         with outer.open(INNER_TRAIN) as nested_bytes:
             nested=zipfile.ZipFile(io.BytesIO(nested_bytes.read()))
             with nested.open("train_data.csv") as f:
+                candidates=[]; first=[]
                 seen=set()
                 for row in csv.DictReader(io.TextIOWrapper(f, encoding="utf-8")):
                     try:
                         if row["event_id"] in seen: continue
                         seen.add(row["event_id"])
-                        events.append({"event_id":row["event_id"],"risk":row["risk"],"miss_distance":row["miss_distance"],"relative_speed":row["relative_speed"],"time_to_closest_approach":str(float(row["time_to_tca"])*86400),"uncertainty":row.get("t_sigma_r","0"),"hard_body_radius":"10"})
+                        item={"event_id":row["event_id"],"risk":row["risk"],"miss_distance":row["miss_distance"],"relative_speed":row["relative_speed"],"time_to_closest_approach":str(float(row["time_to_tca"])*86400),"uncertainty":row.get("t_sigma_r","0"),"hard_body_radius":"10"}
+                        if len(first)<10: first.append(item)
+                        candidates.append((float(row["risk"]),item))
                     except (ValueError, KeyError): pass
-                    if len(events)>=limit: break
-    return events
+                events=first+[item for _,item in sorted(candidates,reverse=True) if item not in first]
+    demos=[{"event_id":"prototype-medium","risk":"demo", "miss_distance":"768","relative_speed":"15096","time_to_closest_approach":"477795","uncertainty":"180","hard_body_radius":"10"},{"event_id":"prototype-high","risk":"demo","miss_distance":"335","relative_speed":"14986","time_to_closest_approach":"3600","uncertainty":"600","hard_body_radius":"10"},{"event_id":"prototype-critical","risk":"demo","miss_distance":"101","relative_speed":"14576","time_to_closest_approach":"1800","uncertainty":"300","hard_body_radius":"10"}]
+    return (events+demos)[:limit]
 
 def analyze(x):
     p=MODEL.predict(x); physics=risk_proxy(x)
