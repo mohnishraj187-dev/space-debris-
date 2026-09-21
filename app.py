@@ -78,7 +78,7 @@ def dataset_events(limit=30):
                         candidates.append((float(row["risk"]),item))
                     except (ValueError, KeyError): pass
                 events=first+[item for _,item in sorted(candidates,key=lambda pair: pair[0],reverse=True) if item not in first]
-    demos=[{"event_id":"prototype-medium","risk":"demo", "miss_distance":"768","relative_speed":"15096","time_to_closest_approach":"477795","uncertainty":"180","hard_body_radius":"10"},{"event_id":"prototype-high","risk":"demo","miss_distance":"335","relative_speed":"14986","time_to_closest_approach":"3600","uncertainty":"600","hard_body_radius":"10"},{"event_id":"prototype-critical","risk":"demo","miss_distance":"101","relative_speed":"14576","time_to_closest_approach":"1800","uncertainty":"300","hard_body_radius":"10"}]
+    demos=[{"event_id":"prototype-medium","risk":"demo", "miss_distance":"768","relative_speed":"15096","time_to_closest_approach":"86400","uncertainty":"600","hard_body_radius":"10"},{"event_id":"prototype-high","risk":"demo","miss_distance":"335","relative_speed":"14986","time_to_closest_approach":"3600","uncertainty":"600","hard_body_radius":"10"},{"event_id":"prototype-critical","risk":"demo","miss_distance":"101","relative_speed":"14576","time_to_closest_approach":"1800","uncertainty":"300","hard_body_radius":"10"}]
     return events[:max(0,limit-len(demos))]+demos
 
 def analyze(x):
