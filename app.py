@@ -89,7 +89,11 @@ def analyze(x):
     dt=max(60.0,x["time_to_closest_approach"])
     dv=max(.01,required/(2*dt)) if required else 0.0
     action="MONITOR" if not required or combined<.30 else "REVIEW MANEUVER"
-    return {"ml_probability":round(p,4),"physics_score":round(physics,4),"combined_risk":round(combined,4),"risk_level":level,"required_separation_m":round(required,2),"estimated_delta_v_mps":round(dv,5),"action":action,"model":"31-tree Random Forest-style ensemble"}
+    if level=="HIGH": suggestion="Prioritize immediate operator review; compare along-track, radial, and cross-track options before TCA."
+    elif level=="MEDIUM": suggestion="Increase tracking frequency and prepare a low-Delta-V maneuver alternative."
+    else: suggestion="Continue monitoring; no maneuver is suggested by this prototype."
+    direction="along-track candidate" if level!="LOW" else "none"
+    return {"ml_probability":round(p,4),"physics_score":round(physics,4),"combined_risk":round(combined,4),"risk_level":level,"required_separation_m":round(required,2),"estimated_delta_v_mps":round(dv,5),"action":action,"suggestion":suggestion,"direction":direction,"model":"31-tree Random Forest-style ensemble"}
 
 HTML=Path(__file__).with_name("index.html").read_text()
 class Handler(BaseHTTPRequestHandler):
