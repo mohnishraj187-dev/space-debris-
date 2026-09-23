@@ -1,0 +1,7 @@
+{
+  "version": 2,
+  "rewrites": [
+    { "source": "/api/events", "destination": "/api/events.py" },
+    { "source": "/api/analyze", "destination": "/api/analyze.py" }
+  ]
+}
