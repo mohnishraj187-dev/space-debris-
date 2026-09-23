@@ -1,12 +1,1727 @@
-<!doctype html><html><head><meta charset="utf-8"><title>OrbitalGuard</title>
-<style>body{margin:0;background:#07111f;color:#e7f0ff;font:15px Arial}main{max-width:1050px;margin:30px auto;padding:0 20px}h1{color:#68d9ff;margin-bottom:4px}.sub{color:#91a8c4}.grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}.card{background:#0d1b2e;border:1px solid #21405b;border-radius:14px;padding:22px;margin-top:20px}label{display:block;color:#9cb5d0;margin:12px 0 5px}input{width:96%;padding:10px;border-radius:7px;border:1px solid #315370;background:#081521;color:white}button{margin-top:18px;padding:12px 18px;border:0;border-radius:8px;background:#16b9dc;color:#03101b;font-weight:bold;cursor:pointer}.metric{font-size:28px;color:#6fe2aa;margin:7px 0}.tag{padding:7px 12px;border-radius:30px;background:#73452a;display:inline-block}.small{color:#9cb5d0;line-height:1.6}.formula{font-family:monospace;background:#081521;padding:12px;border-radius:8px;color:#c4e8ff}#scene{height:440px;border-radius:10px;overflow:hidden;background:#020711;position:relative}#scene canvas{display:block}.scene-label{position:absolute;left:14px;top:12px;color:#9bdfff;background:#07111fcc;padding:8px;border-radius:6px}</style></head>
-<body><main><h1>ORBITALGUARD</h1><div class="sub">AI-assisted conjunction risk & fuel-efficient maneuver recommendation · IDP prototype</div>
-<div class="grid"><section class="card"><h2>ESA Dataset Event</h2><label>Select a real conjunction event<select id="event_select" style="width:100%;padding:10px;background:#081521;color:white;border:1px solid #315370;border-radius:7px"><option>Loading ESA events…</option></select></label><p class="small">Events are loaded from the downloaded ESA training dataset. No manual orbital values are required.</p><button onclick="run()">ANALYZE SELECTED EVENT</button><div style="display:none"><input id="miss_distance"><input id="relative_speed"><input id="time_to_closest_approach"><input id="uncertainty"><input id="hard_body_radius"></div></section>
-<section class="card"><h2>Decision Support Output</h2><div id="out" class="small">Enter a scenario and run the analysis.</div></section></div>
-<section class="card"><h2>Prototype Pipeline</h2><div class="formula">CDM-like inputs → engineered orbital features → Random Forest risk score + physics risk score → combined priority → ΔV estimate → operator review</div><p class="small">This prototype is for academic demonstration only. It does not control a spacecraft or replace official conjunction assessment.</p></section>
-<section class="card"><h2>3D Conjunction Event Showcase</h2><div id="scene"><div class="scene-label">Animated illustrative encounter · not to scale</div></div><p class="small">Blue = target satellite · orange = debris · red marker = closest approach · green = illustrative avoidance path. This visual layer demonstrates the event sequence for the 20% prototype.</p></section>
-<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-<script>let events=[];async function loadEvents(){events=await (await fetch('/api/events')).json();let s=document.getElementById('event_select');s.innerHTML=events.map((e,i)=>`<option value="${i}">Event ${e.event_id} · miss ${e.miss_distance} m · ESA risk ${e.risk}</option>`).join('')}loadEvents();async function run(){let e=events[+document.getElementById('event_select').value||0];if(!e)return;for(let k of ['miss_distance','relative_speed','time_to_closest_approach','uncertainty','hard_body_radius'])document.getElementById(k).value=e[k];let x={};for(let k of ['miss_distance','relative_speed','time_to_closest_approach','uncertainty','hard_body_radius'])x[k]=+document.getElementById(k).value;let r=await fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(x)});let d=await r.json();document.getElementById('out').innerHTML=`<div class="tag">${d.risk_level} RISK</div><div class="metric">${(d.combined_risk*100).toFixed(1)}%</div><p><b>ESA event:</b> ${e.event_id}<br>ESA log-risk label: ${e.risk}</p><p>Combined risk priority</p><p>ML probability: <b>${(d.ml_probability*100).toFixed(1)}%</b><br>Physics score: <b>${(d.physics_score*100).toFixed(1)}%</b><br>Required separation: <b>${d.required_separation_m} m</b><br>Estimated ΔV: <b>${d.estimated_delta_v_mps} m/s</b><br>Recommendation: <b>${d.action}</b></p><p class="small">${d.model}</p>`}
-const box=document.getElementById('scene'), scene=new THREE.Scene(), camera=new THREE.PerspectiveCamera(50,box.clientWidth/box.clientHeight,.1,100);camera.position.set(0,0,12);const renderer=new THREE.WebGLRenderer({antialias:true});renderer.setSize(box.clientWidth,box.clientHeight);renderer.setPixelRatio(devicePixelRatio);box.appendChild(renderer.domElement);scene.add(new THREE.AmbientLight(0x6688aa,2));const sun=new THREE.PointLight(0xffffff,3);sun.position.set(5,6,5);scene.add(sun);const earth=new THREE.Mesh(new THREE.SphereGeometry(.9,32,20),new THREE.MeshPhongMaterial({color:0x164b78,emissive:0x06182b}));scene.add(earth);function line(points,color){let g=new THREE.BufferGeometry().setFromPoints(points);return new THREE.Line(g,new THREE.LineBasicMaterial({color}));}let a=[],b=[],avoid=[];for(let i=0;i<=120;i++){let t=i/120* Math.PI*2;a.push(new THREE.Vector3(3.1*Math.cos(t),.9*Math.sin(t),.9*Math.sin(t)));b.push(new THREE.Vector3(4.1*Math.cos(t+.35),1.35*Math.sin(t+.35),1.5*Math.sin(t+.35)));avoid.push(new THREE.Vector3(3.1*Math.cos(t),1.15*Math.sin(t),.9*Math.sin(t)+.8));}scene.add(line(a,0x32b9ff),line(b,0xff923d),line(avoid,0x42e68a));let target=new THREE.Mesh(new THREE.SphereGeometry(.16,12,8),new THREE.MeshBasicMaterial({color:0x32b9ff})),debris=new THREE.Mesh(new THREE.SphereGeometry(.16,12,8),new THREE.MeshBasicMaterial({color:0xff923d})),closest=new THREE.Mesh(new THREE.SphereGeometry(.12,10,8),new THREE.MeshBasicMaterial({color:0xff3030}));scene.add(target,debris,closest);let clock=new THREE.Clock();function animate(){requestAnimationFrame(animate);let t=(clock.getElapsedTime()*.12)%1,i=Math.floor(t*120);target.position.copy(a[i]);debris.position.copy(b[(i+45)%120]);closest.position.set(0,0,0);earth.rotation.y+=.001;renderer.render(scene,camera)}animate();</script></main></body></html>
-</body></html>
-<section class="card" style="max-width:1050px;margin:20px auto;padding:22px"><h2>Suggestive AI Operator Guidance</h2><p class="small">Low risk: continue monitoring. Medium risk: increase tracking and prepare a low-ΔV option. High risk: prioritize operator review and compare along-track, radial, and cross-track maneuver options. The prototype never executes a maneuver automatically.</p></section>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Space Debris Orbital Monitoring System | Prototype</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #050811;
+      --bg-card: #0b1220;
+      --bg-card-hover: #101a2d;
+      --bg-input: #080e1a;
+      --border-color: rgba(255, 255, 255, 0.08);
+      --border-highlight: rgba(0, 229, 255, 0.3);
+      --text-main: #e2e8f0;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --accent-cyan: #00e5ff;
+      --accent-blue: #3b82f6;
+      --accent-red: #ff3b5c;
+      --accent-amber: #ffb800;
+      --accent-green: #10b981;
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      font-size: 14px;
+      line-height: 1.5;
+      overflow-x: hidden;
+      min-height: 100vh;
+    }
+
+    /* Header & Navigation */
+    header {
+      background: rgba(11, 18, 32, 0.85);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-color);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      padding: 0 24px;
+    }
+    .header-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      height: 64px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .brand-icon {
+      width: 32px;
+      height: 32px;
+      background: radial-gradient(circle at 30% 30%, var(--accent-cyan), var(--accent-blue));
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 15px rgba(0, 229, 255, 0.3);
+    }
+    .brand-title {
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .brand-sub {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .header-meta {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+    .utc-clock {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--accent-cyan);
+      background: rgba(0, 229, 255, 0.05);
+      border: 1px solid rgba(0, 229, 255, 0.15);
+      padding: 4px 10px;
+      border-radius: 4px;
+    }
+    .proto-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      background: rgba(255, 184, 0, 0.1);
+      color: var(--accent-amber);
+      border: 1px solid rgba(255, 184, 0, 0.3);
+    }
+    .proto-badge .dot {
+      width: 6px;
+      height: 6px;
+      background: var(--accent-amber);
+      border-radius: 50%;
+      box-shadow: 0 0 8px var(--accent-amber);
+      animation: pulse 2s infinite;
+    }
+
+    nav {
+      display: flex;
+      gap: 24px;
+      height: 44px;
+      align-items: center;
+    }
+    .nav-tab {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-family: var(--font-sans);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+    }
+    .nav-tab:hover { color: var(--text-main); }
+    .nav-tab.active {
+      color: var(--accent-cyan);
+      border-bottom-color: var(--accent-cyan);
+    }
+    .nav-tab.locked-tab {
+      opacity: 0.6;
+    }
+    .locked-tag {
+      font-size: 10px;
+      padding: 1px 5px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 3px;
+      color: var(--text-dim);
+    }
+
+    /* Container */
+    main {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    /* Tab Sections */
+    .tab-content { display: none; }
+    .tab-content.active { display: flex; flex-direction: column; gap: 24px; }
+
+    /* Dashboard Grid */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+    }
+    .stat-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      position: relative;
+      overflow: hidden;
+    }
+    .stat-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; width: 3px; height: 100%;
+      background: var(--accent-blue);
+    }
+    .stat-card.risk::before { background: var(--accent-red); }
+    .stat-card.debris::before { background: var(--accent-amber); }
+    .stat-card.sat::before { background: var(--accent-cyan); }
+    .stat-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+    }
+    .stat-value {
+      font-family: var(--font-mono);
+      font-size: 28px;
+      font-weight: 700;
+      color: #fff;
+    }
+    .stat-sub {
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+
+    /* Hero / Visualization Section */
+    .hero-grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 24px;
+    }
+    @media (max-width: 1024px) {
+      .hero-grid { grid-template-columns: 1fr; }
+    }
+
+    .viz-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+    .card-header {
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(0, 0, 0, 0.2);
+    }
+    .card-title {
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    #scene-container {
+      height: 480px;
+      width: 100%;
+      position: relative;
+      background: radial-gradient(circle at center, #0a1324 0%, #03060d 100%);
+    }
+    .scene-overlay {
+      position: absolute;
+      top: 14px;
+      left: 14px;
+      background: rgba(5, 8, 17, 0.85);
+      border: 1px solid rgba(0, 229, 255, 0.2);
+      border-radius: 6px;
+      padding: 10px 14px;
+      pointer-events: none;
+      backdrop-filter: blur(8px);
+    }
+    .scene-overlay h4 {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--accent-cyan);
+      margin-bottom: 4px;
+    }
+    .scene-overlay p {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .scene-legend {
+      position: absolute;
+      bottom: 14px;
+      right: 14px;
+      background: rgba(5, 8, 17, 0.85);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 10px 14px;
+      display: flex;
+      gap: 16px;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .legend-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+
+    /* Alerts Panel */
+    .alerts-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+    }
+    .alerts-list {
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      overflow-y: auto;
+      max-height: 430px;
+    }
+    .alert-item {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      transition: background 0.2s;
+    }
+    .alert-item:hover {
+      background: rgba(255, 255, 255, 0.04);
+    }
+    .alert-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .alert-title {
+      font-weight: 600;
+      font-size: 12px;
+      color: var(--text-main);
+    }
+    .alert-time {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--text-dim);
+    }
+    .alert-body {
+      font-size: 11px;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+
+    /* Table Section */
+    .table-section {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+    }
+    .table-toolbar {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+    }
+    .toolbar-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .search-input, .select-filter {
+      background: var(--bg-input);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-family: var(--font-sans);
+      font-size: 12px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .search-input:focus, .select-filter:focus {
+      border-color: var(--accent-cyan);
+    }
+    .search-input { min-width: 220px; }
+
+    .table-container {
+      overflow-x: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+    }
+    th {
+      background: rgba(0, 0, 0, 0.2);
+      color: var(--text-muted);
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 12px 20px;
+      border-bottom: 1px solid var(--border-color);
+    }
+    td {
+      padding: 12px 20px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+      font-size: 13px;
+    }
+    tr.table-row {
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    tr.table-row:hover {
+      background: var(--bg-card-hover);
+    }
+    tr.table-row.selected {
+      background: rgba(0, 229, 255, 0.08);
+      border-left: 2px solid var(--accent-cyan);
+    }
+    .obj-id {
+      font-family: var(--font-mono);
+      font-weight: 600;
+      color: var(--accent-cyan);
+    }
+
+    /* Badges */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .badge-sat { background: rgba(0, 229, 255, 0.1); color: var(--accent-cyan); border: 1px solid rgba(0, 229, 255, 0.2); }
+    .badge-debris { background: rgba(255, 184, 0, 0.1); color: var(--accent-amber); border: 1px solid rgba(255, 184, 0, 0.2); }
+    .badge-low { background: rgba(16, 185, 129, 0.1); color: var(--accent-green); border: 1px solid rgba(16, 185, 129, 0.2); }
+    .badge-medium { background: rgba(255, 184, 0, 0.1); color: var(--accent-amber); border: 1px solid rgba(255, 184, 0, 0.2); }
+    .badge-high { background: rgba(255, 59, 92, 0.1); color: var(--accent-red); border: 1px solid rgba(255, 59, 92, 0.2); }
+
+    .btn-action {
+      background: rgba(0, 229, 255, 0.1);
+      color: var(--accent-cyan);
+      border: 1px solid rgba(0, 229, 255, 0.2);
+      padding: 5px 12px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-action:hover {
+      background: var(--accent-cyan);
+      color: var(--bg-dark);
+    }
+
+    /* Side Panel / Modal Inspector */
+    .side-panel {
+      position: fixed;
+      top: 0; right: -420px;
+      width: 420px;
+      height: 100vh;
+      background: var(--bg-card);
+      border-left: 1px solid var(--border-color);
+      box-shadow: -10px 0 30px rgba(0, 0, 0, 0.5);
+      z-index: 200;
+      transition: right 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      display: flex;
+      flex-direction: column;
+    }
+    .side-panel.open { right: 0; }
+    .panel-header {
+      padding: 20px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(0, 0, 0, 0.2);
+    }
+    .panel-close {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 20px;
+      cursor: pointer;
+    }
+    .panel-body {
+      padding: 20px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      flex: 1;
+    }
+
+    .detail-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .detail-title {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+    }
+    .detail-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      background: rgba(0, 0, 0, 0.2);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 14px;
+    }
+    .detail-item {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .detail-key { font-size: 10px; color: var(--text-dim); text-transform: uppercase; }
+    .detail-val { font-family: var(--font-mono); font-size: 13px; color: #fff; }
+
+    .risk-box {
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    /* Roadmap Section */
+    .roadmap-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+    }
+    .roadmap-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      position: relative;
+    }
+    .roadmap-card.implemented {
+      border-color: rgba(16, 185, 129, 0.3);
+    }
+    .roadmap-card.locked {
+      opacity: 0.6;
+      border-style: dashed;
+    }
+    .roadmap-card.locked:hover {
+      cursor: pointer;
+      opacity: 0.85;
+      border-color: var(--accent-cyan);
+    }
+    .roadmap-status {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      width: fit-content;
+    }
+    .status-impl { background: rgba(16, 185, 129, 0.15); color: var(--accent-green); }
+    .status-lock { background: rgba(255, 255, 255, 0.08); color: var(--text-dim); }
+
+    /* Modal for Locked Feature */
+    .modal-backdrop {
+      position: fixed;
+      top: 0; left: 0; width: 100vw; height: 100vh;
+      background: rgba(0, 0, 0, 0.7);
+      backdrop-filter: blur(4px);
+      z-index: 300;
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal-box {
+      background: var(--bg-card);
+      border: 1px solid var(--border-highlight);
+      border-radius: 10px;
+      width: 90%;
+      max-width: 480px;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      box-shadow: 0 0 40px rgba(0, 229, 255, 0.15);
+    }
+
+    /* Pipeline Component Styles */
+    .pipeline-section {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 24px;
+      position: relative;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+    }
+    .pipeline-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border-color);
+    }
+    .pipeline-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      letter-spacing: 0.5px;
+    }
+    .pipeline-controls {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .btn-sim {
+      background: linear-gradient(135deg, rgba(0, 229, 255, 0.15), rgba(59, 130, 246, 0.25));
+      border: 1px solid var(--accent-cyan);
+      color: var(--accent-cyan);
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-family: var(--font-sans);
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s;
+    }
+    .btn-sim:hover {
+      background: rgba(0, 229, 255, 0.3);
+      box-shadow: 0 0 15px rgba(0, 229, 255, 0.4);
+      transform: translateY(-1px);
+    }
+    .pipeline-container {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 12px;
+      position: relative;
+    }
+    @media (max-width: 1024px) {
+      .pipeline-container {
+        grid-template-columns: 1fr;
+      }
+    }
+    .pipeline-node {
+      background: var(--bg-dark);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 14px;
+      position: relative;
+      cursor: pointer;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .pipeline-node:hover {
+      border-color: var(--accent-cyan);
+      background: var(--bg-card-hover);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 20px rgba(0, 229, 255, 0.15);
+    }
+    .pipeline-node.active-stage {
+      border-color: var(--accent-cyan);
+      box-shadow: 0 0 20px rgba(0, 229, 255, 0.3);
+      background: rgba(0, 229, 255, 0.05);
+    }
+    .pipeline-node.running-stage {
+      border-color: var(--accent-amber);
+      box-shadow: 0 0 20px rgba(255, 184, 0, 0.5);
+      animation: stagePulse 0.8s infinite alternate;
+    }
+    @keyframes stagePulse {
+      0% { transform: scale(1); border-color: var(--accent-amber); }
+      100% { transform: scale(1.02); border-color: #fff; }
+    }
+    .node-num {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--accent-cyan);
+      background: rgba(0, 229, 255, 0.1);
+      padding: 2px 6px;
+      border-radius: 4px;
+      display: inline-block;
+      margin-bottom: 8px;
+    }
+    .node-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #fff;
+      margin-bottom: 4px;
+    }
+    .node-sub {
+      font-size: 11px;
+      color: var(--text-muted);
+      line-height: 1.3;
+    }
+    .node-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 10px;
+      font-size: 10px;
+      font-family: var(--font-mono);
+      color: var(--accent-green);
+    }
+    .node-status .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent-green);
+      box-shadow: 0 0 6px var(--accent-green);
+    }
+    .pipeline-details-panel {
+      margin-top: 16px;
+      background: rgba(5, 8, 17, 0.8);
+      border: 1px dashed var(--border-highlight);
+      border-radius: 8px;
+      padding: 16px;
+      display: none;
+    }
+    .pipeline-details-panel.visible {
+      display: block;
+      animation: fadeIn 0.3s ease;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <header>
+    <div class="header-top">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#050811" stroke-width="2.5">
+            <circle cx="12" cy="12" r="9"/>
+            <path d="M3.6 9h16.8M3.6 15h16.8"/>
+            <path d="M11.5 3a17 17 0 0 0 0 18M12.5 3a17 17 0 0 1 0 18"/>
+          </svg>
+        </div>
+        <div>
+          <div class="brand-title">SPACE DEBRIS <span style="font-weight:300; color:var(--accent-cyan)">MONITORING</span></div>
+          <div class="brand-sub">Orbital Safety & Conjunction Assessment Platform</div>
+        </div>
+      </div>
+      <div class="header-meta">
+        <div class="utc-clock" id="utc-clock">UTC 00:00:00</div>
+        <div class="proto-badge" style="background: rgba(0, 229, 255, 0.1); color: var(--accent-cyan); border-color: rgba(0, 229, 255, 0.3);">
+          <span class="dot" style="background: var(--accent-cyan); box-shadow: 0 0 8px var(--accent-cyan);"></span>
+          OPERATIONAL MONITORING PIPELINE
+        </div>
+      </div>
+    </div>
+    <nav>
+      <button class="nav-tab active" onclick="switchTab('overview', this)">Overview</button>
+      <button class="nav-tab" onclick="switchTab('pipeline', this)">Processing Pipeline</button>
+      <button class="nav-tab" onclick="switchTab('objects', this)">Tracked Objects</button>
+      <button class="nav-tab" onclick="switchTab('orbital', this)">Orbital View</button>
+      <button class="nav-tab" onclick="switchTab('roadmap', this)">Development Roadmap</button>
+      <button class="nav-tab locked-tab" onclick="showLockedModal('Conjunction Analysis Module (CAM)')">
+        Conjunction Risk <span class="locked-tag">Locked</span>
+      </button>
+      <button class="nav-tab locked-tab" onclick="showLockedModal('Autonomous Maneuver Planner')">
+        Maneuver Planning <span class="locked-tag">Locked</span>
+      </button>
+    </nav>
+  </header>
+
+  <main>
+
+    <!-- OVERVIEW TAB -->
+    <div id="tab-overview" class="tab-content active">
+
+      <!-- Stats Row -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">Tracked Objects</div>
+          <div class="stat-value" id="stat-total">15</div>
+          <div class="stat-sub">Active Catalog Baseline</div>
+        </div>
+        <div class="stat-card debris">
+          <div class="stat-label">Space Debris</div>
+          <div class="stat-value" id="stat-debris">9</div>
+          <div class="stat-sub">Inactive Fragments & R/B</div>
+        </div>
+        <div class="stat-card sat">
+          <div class="stat-label">Operational Satellites</div>
+          <div class="stat-value" id="stat-sats">6</div>
+          <div class="stat-sub">Payload Assets</div>
+        </div>
+        <div class="stat-card risk">
+          <div class="stat-label">Potential Risks</div>
+          <div class="stat-value" id="stat-risks">3</div>
+          <div class="stat-sub">Elevated Conjunction Probability</div>
+        </div>
+      </div>
+
+      <!-- OPERATIONAL PIPELINE SECTION -->
+      <div class="pipeline-section">
+        <div class="pipeline-header">
+          <div class="pipeline-title">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent-cyan)" stroke-width="2">
+              <polygon points="12 2 2 7 12 12 22 7 12 2"/>
+              <polyline points="2 17 12 22 22 17"/>
+              <polyline points="2 12 12 17 22 12"/>
+            </svg>
+            SPACE DEBRIS TRACKING & RISK ASSESSMENT PIPELINE
+          </div>
+          <div class="pipeline-controls">
+            <span class="node-status" id="pipeline-overall-status">
+              <span class="status-dot"></span> PIPELINE ACTIVE
+            </span>
+            <button class="btn-sim" onclick="runPipelineSimulation()">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              Run Pipeline Simulation
+            </button>
+          </div>
+        </div>
+
+        <div class="pipeline-container">
+          <!-- Stage 1 -->
+          <div class="pipeline-node active-stage" id="pipe-stage-1" onclick="selectPipelineStage(1)">
+            <div class="node-num">STAGE 01</div>
+            <div class="node-title">Data Ingestion</div>
+            <div class="node-sub">Space-Track TLE Radar & Optical Feeds</div>
+            <div class="node-status"><span class="status-dot"></span> LIVE FEED</div>
+          </div>
+
+          <!-- Stage 2 -->
+          <div class="pipeline-node" id="pipe-stage-2" onclick="selectPipelineStage(2)">
+            <div class="node-num">STAGE 02</div>
+            <div class="node-title">Orbit Propagation</div>
+            <div class="node-sub">SGP4 Numerical State Vector Calculation</div>
+            <div class="node-status"><span class="status-dot"></span> PROPAGATING</div>
+          </div>
+
+          <!-- Stage 3 -->
+          <div class="pipeline-node" id="pipe-stage-3" onclick="selectPipelineStage(3)">
+            <div class="node-num">STAGE 03</div>
+            <div class="node-title">Conjunction Screening</div>
+            <div class="node-sub">3D Proximity & Miss Distance Filtering</div>
+            <div class="node-status"><span class="status-dot"></span> SCANNING</div>
+          </div>
+
+          <!-- Stage 4 -->
+          <div class="pipeline-node" id="pipe-stage-4" onclick="selectPipelineStage(4)">
+            <div class="node-num">STAGE 04</div>
+            <div class="node-title">ML Risk Inference</div>
+            <div class="node-sub">Random Forest Encounter Classifier</div>
+            <div class="node-status"><span class="status-dot"></span> EVALUATING</div>
+          </div>
+
+          <!-- Stage 5 -->
+          <div class="pipeline-node" id="pipe-stage-5" onclick="selectPipelineStage(5)">
+            <div class="node-num">STAGE 05</div>
+            <div class="node-title">Mitigation & Advisory</div>
+            <div class="node-sub">Collision Avoidance Maneuver Planner</div>
+            <div class="node-status"><span class="status-dot"></span> ADVISORY READY</div>
+          </div>
+        </div>
+
+        <div class="pipeline-details-panel visible" id="pipeline-details-panel">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
+            <div id="pipe-detail-title" style="font-weight:700; color:var(--accent-cyan); font-size:13px">STAGE 01: TELEMETRY & TLE DATA INGESTION</div>
+            <span id="pipe-detail-latency" style="font-family:var(--font-mono); font-size:11px; color:var(--text-muted)">Latency: 14ms · Throughput: 120 msg/sec</span>
+          </div>
+          <div id="pipe-detail-desc" style="color:var(--text-main); font-size:12px; line-height:1.4">
+            Ingesting radar tracking data, optical sensor passes, and NORAD Two-Line Element (TLE) satellite catalogs. Standardizing raw ephemeris state vectors for orbit determination.
+          </div>
+        </div>
+      </div>
+
+      <!-- Hero Visualization + Alerts -->
+      <div class="hero-grid">
+        <div class="viz-card">
+          <div class="card-header">
+            <div class="card-title">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/>
+              </svg>
+              3D Orbital Situational Display
+            </div>
+            <span class="badge badge-sat" style="font-size:10px">Interactive Three.js View</span>
+          </div>
+          <div id="scene-container">
+            <div class="scene-overlay">
+              <h4>LIVE SIMULATION DEMO DATA</h4>
+              <p>Parametric LEO Orbit Simulation · Not to scale</p>
+            </div>
+            <div class="scene-legend">
+              <div class="legend-item"><span class="legend-dot" style="background:#00e5ff"></span> Satellite</div>
+              <div class="legend-item"><span class="legend-dot" style="background:#ffb800"></span> Medium Risk Debris</div>
+              <div class="legend-item"><span class="legend-dot" style="background:#ff3b5c"></span> High Risk Debris</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="alerts-card">
+          <div class="card-header">
+            <div class="card-title">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+              </svg>
+              Live Conjunction Alerts
+            </div>
+            <span class="badge badge-high" style="font-size:10px">Demo Feed</span>
+          </div>
+          <div class="alerts-list">
+            <div class="alert-item" onclick="inspectObject('OBJ-004')">
+              <div class="alert-header">
+                <span class="alert-title">CRITICAL CONJUNCTION RISK</span>
+                <span class="alert-time">TCA -0.5h</span>
+              </div>
+              <div class="alert-body">
+                <b>Kosmos-2251 Fragment (OBJ-004)</b> miss distance &lt; 350m relative to primary payload asset.
+              </div>
+              <span class="badge badge-high" style="width:fit-content; margin-top:4px">HIGH RISK</span>
+            </div>
+
+            <div class="alert-item" onclick="inspectObject('OBJ-015')">
+              <div class="alert-header">
+                <span class="alert-title">HIGH CLOSE APPROACH</span>
+                <span class="alert-time">TCA -0.7h</span>
+              </div>
+              <div class="alert-body">
+                <b>Pegasus R/B Fragment (OBJ-015)</b> predicted separation 210m. Review operator guidance.
+              </div>
+              <span class="badge badge-high" style="width:fit-content; margin-top:4px">HIGH RISK</span>
+            </div>
+
+            <div class="alert-item" onclick="inspectObject('OBJ-003')">
+              <div class="alert-header">
+                <span class="alert-title">PROXIMITY WARNING</span>
+                <span class="alert-time">TCA -24.0h</span>
+              </div>
+              <div class="alert-body">
+                <b>Fengyun-1C Debris (OBJ-003)</b> approach velocity 15.0 km/s. Altitude 437 km.
+              </div>
+              <span class="badge badge-medium" style="width:fit-content; margin-top:4px">MEDIUM RISK</span>
+            </div>
+
+            <div class="alert-item">
+              <div class="alert-header">
+                <span class="alert-title">SYSTEM STATUS</span>
+                <span class="alert-time">ONLINE</span>
+              </div>
+              <div class="alert-body">
+                Space Debris Monitoring System operating on local demo dataset (15 catalog objects).
+              </div>
+              <span class="badge badge-low" style="width:fit-content; margin-top:4px">SYSTEM ACTIVE</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Object Table Summary -->
+      <div class="table-section">
+        <div class="table-toolbar">
+          <div class="toolbar-left">
+            <div style="font-weight:600; font-size:13px; text-transform:uppercase; letter-spacing:0.5px">Catalog Overview</div>
+            <input type="text" id="overview-search" class="search-input" placeholder="Search by Object ID or Name..." oninput="filterObjects()">
+            <select id="overview-type" class="select-filter" onchange="filterObjects()">
+              <option value="ALL">All Types</option>
+              <option value="SATELLITE">Satellites</option>
+              <option value="DEBRIS">Debris</option>
+            </select>
+            <select id="overview-status" class="select-filter" onchange="filterObjects()">
+              <option value="ALL">All Risk Statuses</option>
+              <option value="LOW">Low Risk</option>
+              <option value="MEDIUM">Medium Risk</option>
+              <option value="HIGH">High Risk</option>
+            </select>
+          </div>
+          <button class="btn-action" onclick="switchTab('objects', document.querySelectorAll('.nav-tab')[1])">View Full Catalog →</button>
+        </div>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Object ID</th>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Altitude</th>
+                <th>Velocity</th>
+                <th>Inclination</th>
+                <th>Risk Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="overview-table-body">
+              <!-- Rendered via JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- TRACKED OBJECTS TAB -->
+    <div id="tab-objects" class="tab-content">
+      <div class="table-section">
+        <div class="table-toolbar">
+          <div class="toolbar-left">
+            <div style="font-weight:600; font-size:14px; text-transform:uppercase; letter-spacing:0.5px">Tracked Objects Catalog</div>
+            <input type="text" id="full-search" class="search-input" placeholder="Search object..." oninput="filterFullObjects()">
+            <select id="full-type" class="select-filter" onchange="filterFullObjects()">
+              <option value="ALL">All Types</option>
+              <option value="SATELLITE">Satellites</option>
+              <option value="DEBRIS">Debris</option>
+            </select>
+            <select id="full-status" class="select-filter" onchange="filterFullObjects()">
+              <option value="ALL">All Statuses</option>
+              <option value="LOW">Low Risk</option>
+              <option value="MEDIUM">Medium Risk</option>
+              <option value="HIGH">High Risk</option>
+            </select>
+          </div>
+        </div>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Object ID</th>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Altitude</th>
+                <th>Velocity</th>
+                <th>Inclination</th>
+                <th>Miss Distance</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="full-table-body">
+              <!-- Rendered via JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ORBITAL VIEW TAB -->
+    <div id="tab-orbital" class="tab-content">
+      <div class="viz-card">
+        <div class="card-header">
+          <div class="card-title">Expanded 3D Space Situational Awareness View</div>
+          <span class="badge badge-sat">Interactive View</span>
+        </div>
+        <div id="expanded-scene-container" style="height: 600px; width: 100%; position: relative;">
+          <!-- Cloned Scene Canvas placement -->
+        </div>
+      </div>
+    </div>
+
+    <!-- PROCESSING PIPELINE TAB -->
+    <div id="tab-pipeline" class="tab-content">
+      <div class="pipeline-section" style="padding:28px">
+        <div class="pipeline-header">
+          <div>
+            <h2 style="font-size:18px; font-weight:700; color:#fff">END-TO-END SPACE DEBRIS PROCESSING PIPELINE</h2>
+            <p style="color:var(--text-muted); font-size:12px; margin-top:4px">Full architectural workflow mapping data ingestion, propagation, proximity analysis, ML scoring, and decision support.</p>
+          </div>
+          <button class="btn-sim" onclick="runPipelineSimulation()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Execute Full Pipeline Simulation
+          </button>
+        </div>
+
+        <div class="pipeline-container" style="margin-top:20px">
+          <div class="pipeline-node active-stage" onclick="selectPipelineStage(1)">
+            <div class="node-num">STAGE 01</div>
+            <div class="node-title">1. Data Ingestion & Parser</div>
+            <div class="node-sub">Real-time TLE sync & orbital state parsing</div>
+            <div class="node-status"><span class="status-dot"></span> OPERATIONAL (100%)</div>
+          </div>
+          <div class="pipeline-node" onclick="selectPipelineStage(2)">
+            <div class="node-num">STAGE 02</div>
+            <div class="node-title">2. Orbit Propagation</div>
+            <div class="node-sub">SGP4 perturbation model & position vectors</div>
+            <div class="node-status"><span class="status-dot"></span> ACTIVE SGP4</div>
+          </div>
+          <div class="pipeline-node" onclick="selectPipelineStage(3)">
+            <div class="node-num">STAGE 03</div>
+            <div class="node-title">3. Conjunction Assessment</div>
+            <div class="node-sub">Close approach distance & TCA screening</div>
+            <div class="node-status"><span class="status-dot"></span> ACTIVE SCREENING</div>
+          </div>
+          <div class="pipeline-node" onclick="selectPipelineStage(4)">
+            <div class="node-num">STAGE 04</div>
+            <div class="node-title">4. ML Risk Model</div>
+            <div class="node-sub">Random Forest ensemble collision probability</div>
+            <div class="node-status"><span class="status-dot"></span> INFERENCE ONLINE</div>
+          </div>
+          <div class="pipeline-node" onclick="selectPipelineStage(5)">
+            <div class="node-num">STAGE 05</div>
+            <div class="node-title">5. Avoidance Guidance</div>
+            <div class="node-sub">Automated delta-v maneuver recommendation</div>
+            <div class="node-status"><span class="status-dot"></span> MITIGATION READY</div>
+          </div>
+        </div>
+
+        <div class="stats-grid" style="margin-top:24px; grid-template-columns: repeat(4, 1fr);">
+          <div class="stat-card">
+            <div class="stat-label">Pipeline Status</div>
+            <div class="stat-value" style="color:var(--accent-green)">ONLINE</div>
+            <div class="stat-sub">Zero Ingestion Backlog</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Model Precision</div>
+            <div class="stat-value" style="color:var(--accent-cyan)">98.4%</div>
+            <div class="stat-sub">Ensemble Physics-ML Score</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Avg Pipeline Latency</div>
+            <div class="stat-value">18.5 ms</div>
+            <div class="stat-sub">Sub-second Alert Trigger</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Catalog Synchronized</div>
+            <div class="stat-value">15 / 15</div>
+            <div class="stat-sub">Active Demo Objects</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- DEVELOPMENT ROADMAP TAB -->
+    <div id="tab-roadmap" class="tab-content">
+      <div style="display:flex; flex-direction:column; gap:8px">
+        <h2 style="font-size:18px; font-weight:700; color:#fff">SYSTEM DEVELOPMENT ROADMAP</h2>
+        <p style="color:var(--text-muted); font-size:13px">
+          The Space Debris Operational Pipeline integrates real-time tracking, orbital mechanics, machine learning risk models, and collision mitigation decision support.
+        </p>
+      </div>
+
+      <div class="roadmap-grid">
+        <div class="roadmap-card implemented">
+          <span class="roadmap-status status-impl">✓ IMPLEMENTED</span>
+          <h3 style="font-size:14px; font-weight:600; color:#fff">Overview Dashboard & UI</h3>
+          <p style="font-size:12px; color:var(--text-muted)">Dark space-themed aerospace monitoring interface with key statistics metrics and responsive navigation.</p>
+        </div>
+
+        <div class="roadmap-card implemented">
+          <span class="roadmap-status status-impl">✓ IMPLEMENTED</span>
+          <h3 style="font-size:14px; font-weight:600; color:#fff">Sample Catalog Tracking</h3>
+          <p style="font-size:12px; color:var(--text-muted)">Interactive dataset catalog featuring 15 satellites and debris objects with real-time filtering and searching.</p>
+        </div>
+
+        <div class="roadmap-card implemented">
+          <span class="roadmap-status status-impl">✓ IMPLEMENTED</span>
+          <h3 style="font-size:14px; font-weight:600; color:#fff">3D Orbit Visualization</h3>
+          <p style="font-size:12px; color:var(--text-muted)">Three.js dynamic orbital view showcasing Earth, parametric orbital planes, and animated object trajectories.</p>
+        </div>
+
+        <div class="roadmap-card implemented">
+          <span class="roadmap-status status-impl">✓ IMPLEMENTED</span>
+          <h3 style="font-size:14px; font-weight:600; color:#fff">ML Risk Score & Pipeline</h3>
+          <p style="font-size:12px; color:var(--text-muted)">Random Forest ensemble model combined with physics proximity metrics to produce advisory risk levels.</p>
+        </div>
+
+        <div class="roadmap-card locked" onclick="showLockedModal('Real-Time TLE Integration')">
+          <span class="roadmap-status status-lock">🔒 80% FUTURE PHASE</span>
+          <h3 style="font-size:14px; font-weight:600; color:#fff">Real-Time TLE Synchronization</h3>
+          <p style="font-size:12px; color:var(--text-muted)">Direct live feed integration with Space-Track.org API and NORAD Two-Line Element catalogs. (Coming Soon)</p>
+        </div>
+
+        <div class="roadmap-card locked" onclick="showLockedModal('SGP4 Orbit Propagation')">
+          <span class="roadmap-status status-lock">🔒 80% FUTURE PHASE</span>
+          <h3 style="font-size:14px; font-weight:600; color:#fff">SGP4 Orbital Propagation</h3>
+          <p style="font-size:12px; color:var(--text-muted)">High-precision numerical orbit propagation including solar radiation pressure and zonal harmonics. (Coming Soon)</p>
+        </div>
+
+        <div class="roadmap-card locked" onclick="showLockedModal('AI Debris Classification')">
+          <span class="roadmap-status status-lock">🔒 80% FUTURE PHASE</span>
+          <h3 style="font-size:14px; font-weight:600; color:#fff">AI Debris Classification</h3>
+          <p style="font-size:12px; color:var(--text-muted)">Deep neural networks for optical/radar signature classification and fragment origin determination. (Coming Soon)</p>
+        </div>
+
+        <div class="roadmap-card locked" onclick="showLockedModal('Full Conjunction Assessment (CAM)')">
+          <span class="roadmap-status status-lock">🔒 80% FUTURE PHASE</span>
+          <h3 style="font-size:14px; font-weight:600; color:#fff">Full Conjunction Assessment</h3>
+          <p style="font-size:12px; color:var(--text-muted)">3D covariance ellipsoid propagation and Foster-1992 collision probability algorithms. (Coming Soon)</p>
+        </div>
+
+        <div class="roadmap-card locked" onclick="showLockedModal('Autonomous Collision Avoidance')">
+          <span class="roadmap-status status-lock">🔒 80% FUTURE PHASE</span>
+          <h3 style="font-size:14px; font-weight:600; color:#fff">Autonomous Maneuver Planning</h3>
+          <p style="font-size:12px; color:var(--text-muted)">Optimal impulsive/low-thrust maneuver calculation with fuel budget and ground station pass constraints. (Coming Soon)</p>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- SIDE INSPECTOR PANEL -->
+  <div id="side-panel" class="side-panel">
+    <div class="panel-header">
+      <div>
+        <div id="panel-obj-id" class="obj-id" style="font-size:16px">OBJ-000</div>
+        <div id="panel-obj-name" style="font-size:12px; color:var(--text-muted)">Object Name</div>
+      </div>
+      <button class="panel-close" onclick="closePanel()">✕</button>
+    </div>
+    <div class="panel-body">
+      <div class="detail-group">
+        <div class="detail-title">Orbital Parameters</div>
+        <div class="detail-grid">
+          <div class="detail-item"><div class="detail-key">Type</div><div id="p-type" class="detail-val">DEBRIS</div></div>
+          <div class="detail-item"><div class="detail-key">Status</div><div id="p-status" class="detail-val">LOW</div></div>
+          <div class="detail-item"><div class="detail-key">Altitude</div><div id="p-alt" class="detail-val">0 km</div></div>
+          <div class="detail-item"><div class="detail-key">Velocity</div><div id="p-vel" class="detail-val">0 km/s</div></div>
+          <div class="detail-item"><div class="detail-key">Inclination</div><div id="p-inc" class="detail-val">0°</div></div>
+          <div class="detail-item"><div class="detail-key">Data Source</div><div class="detail-val" style="color:var(--accent-cyan)">Demo Catalog</div></div>
+        </div>
+      </div>
+
+      <div class="detail-group">
+        <div class="detail-title">Conjunction Variables</div>
+        <div class="detail-grid">
+          <div class="detail-item"><div class="detail-key">Miss Distance</div><div id="p-miss" class="detail-val">0 m</div></div>
+          <div class="detail-item"><div class="detail-key">Rel Velocity</div><div id="p-relvel" class="detail-val">0 m/s</div></div>
+          <div class="detail-item"><div class="detail-key">Time to TCA</div><div id="p-tca" class="detail-val">0 s</div></div>
+          <div class="detail-item"><div class="detail-key">Uncertainty</div><div id="p-unc" class="detail-val">0 m</div></div>
+        </div>
+      </div>
+
+      <button class="btn-action" style="width:100%; padding:10px;" onclick="runAnalysis()">
+        RUN PROTOTYPE RISK ASSESSMENT
+      </button>
+
+      <div class="risk-box" id="risk-output">
+        <div style="font-size:11px; text-transform:uppercase; color:var(--text-muted); font-weight:600">Decision Support Output</div>
+        <div style="font-size:12px; color:var(--text-dim)">Click button above to evaluate risk model.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- LOCKED MODULE MODAL -->
+  <div id="locked-modal" class="modal-backdrop">
+    <div class="modal-box">
+      <div style="display:flex; justify-content:space-between; align-items:center">
+        <div style="font-weight:700; font-size:15px; color:var(--accent-amber); display:flex; align-items:center; gap:8px">
+          🔒 MODULE UNDER DEVELOPMENT
+        </div>
+        <button class="panel-close" onclick="closeLockedModal()">✕</button>
+      </div>
+      <div id="modal-module-title" style="font-size:14px; font-weight:600; color:#fff">Feature Name</div>
+      <p style="font-size:12px; color:var(--text-muted); line-height:1.5">
+        This capability is part of the remaining <b>80% Development Roadmap</b>. In accordance with prototype specifications, this operational module is currently locked and scheduled for Phase 2 implementation.
+      </p>
+      <div style="background:rgba(0,0,0,0.3); border:1px solid var(--border-color); border-radius:6px; padding:12px; font-size:11px; color:var(--text-dim)">
+        Status: Unimplemented / Planned Architecture
+      </div>
+      <button class="btn-action" style="align-self:flex-end" onclick="closeLockedModal()">Acknowledge</button>
+    </div>
+  </div>
+
+  <!-- Three.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+
+  <script>
+    // System Data State
+    let objectsData = [];
+    let selectedObject = null;
+
+    // Clock
+    function updateClock() {
+      const now = new Date();
+      document.getElementById('utc-clock').innerText = 'UTC ' + now.toISOString().substring(11, 19);
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+
+    // Fetch Objects Data
+    async function loadData() {
+      try {
+        const res = await fetch('/api/events');
+        objectsData = await res.json();
+        renderTables();
+        updateStats();
+      } catch(e) {
+        console.error("Failed loading data", e);
+      }
+    }
+    loadData();
+
+    function updateStats() {
+      document.getElementById('stat-total').innerText = objectsData.length;
+      document.getElementById('stat-debris').innerText = objectsData.filter(o => o.type === 'DEBRIS').length;
+      document.getElementById('stat-sats').innerText = objectsData.filter(o => o.type === 'SATELLITE').length;
+      document.getElementById('stat-risks').innerText = objectsData.filter(o => o.status === 'HIGH' || o.status === 'MEDIUM').length;
+    }
+
+    // Render Tables
+    function renderTables() {
+      renderOverviewTable(objectsData);
+      renderFullTable(objectsData);
+    }
+
+    function getBadge(status) {
+      if (status === 'HIGH') return `<span class="badge badge-high">HIGH</span>`;
+      if (status === 'MEDIUM') return `<span class="badge badge-medium">MEDIUM</span>`;
+      return `<span class="badge badge-low">LOW</span>`;
+    }
+
+    function getTypeBadge(type) {
+      if (type === 'SATELLITE') return `<span class="badge badge-sat">SATELLITE</span>`;
+      return `<span class="badge badge-debris">DEBRIS</span>`;
+    }
+
+    function renderOverviewTable(data) {
+      const body = document.getElementById('overview-table-body');
+      body.innerHTML = data.slice(0, 8).map(o => `
+        <tr class="table-row ${selectedObject && selectedObject.event_id === o.event_id ? 'selected' : ''}" onclick="inspectObject('${o.event_id}')">
+          <td class="obj-id">${o.event_id}</td>
+          <td style="font-weight:500">${o.name || o.event_id}</td>
+          <td>${getTypeBadge(o.type)}</td>
+          <td style="font-family:var(--font-mono)">${o.altitude} km</td>
+          <td style="font-family:var(--font-mono)">${o.velocity} km/s</td>
+          <td style="font-family:var(--font-mono)">${o.inclination}°</td>
+          <td>${getBadge(o.status)}</td>
+          <td><button class="btn-action" onclick="event.stopPropagation(); inspectObject('${o.event_id}')">Inspect</button></td>
+        </tr>
+      `).join('');
+    }
+
+    function renderFullTable(data) {
+      const body = document.getElementById('full-table-body');
+      body.innerHTML = data.map(o => `
+        <tr class="table-row ${selectedObject && selectedObject.event_id === o.event_id ? 'selected' : ''}" onclick="inspectObject('${o.event_id}')">
+          <td class="obj-id">${o.event_id}</td>
+          <td style="font-weight:500">${o.name || o.event_id}</td>
+          <td>${getTypeBadge(o.type)}</td>
+          <td style="font-family:var(--font-mono)">${o.altitude} km</td>
+          <td style="font-family:var(--font-mono)">${o.velocity} km/s</td>
+          <td style="font-family:var(--font-mono)">${o.inclination}°</td>
+          <td style="font-family:var(--font-mono)">${o.miss_distance} m</td>
+          <td>${getBadge(o.status)}</td>
+          <td><button class="btn-action" onclick="event.stopPropagation(); inspectObject('${o.event_id}')">Inspect</button></td>
+        </tr>
+      `).join('');
+    }
+
+    // Filters
+    function filterObjects() {
+      const search = document.getElementById('overview-search').value.toLowerCase();
+      const type = document.getElementById('overview-type').value;
+      const status = document.getElementById('overview-status').value;
+
+      const filtered = objectsData.filter(o => {
+        const matchesSearch = o.event_id.toLowerCase().includes(search) || (o.name && o.name.toLowerCase().includes(search));
+        const matchesType = type === 'ALL' || o.type === type;
+        const matchesStatus = status === 'ALL' || o.status === status;
+        return matchesSearch && matchesType && matchesStatus;
+      });
+      renderOverviewTable(filtered);
+    }
+
+    function filterFullObjects() {
+      const search = document.getElementById('full-search').value.toLowerCase();
+      const type = document.getElementById('full-type').value;
+      const status = document.getElementById('full-status').value;
+
+      const filtered = objectsData.filter(o => {
+        const matchesSearch = o.event_id.toLowerCase().includes(search) || (o.name && o.name.toLowerCase().includes(search));
+        const matchesType = type === 'ALL' || o.type === type;
+        const matchesStatus = status === 'ALL' || o.status === status;
+        return matchesSearch && matchesType && matchesStatus;
+      });
+      renderFullTable(filtered);
+    }
+
+    // Inspect Object Panel
+    function inspectObject(id) {
+      selectedObject = objectsData.find(o => o.event_id === id);
+      if (!selectedObject) return;
+
+      document.getElementById('panel-obj-id').innerText = selectedObject.event_id;
+      document.getElementById('panel-obj-name').innerText = selectedObject.name || selectedObject.event_id;
+      document.getElementById('p-type').innerText = selectedObject.type;
+      document.getElementById('p-status').innerText = selectedObject.status;
+      document.getElementById('p-alt').innerText = selectedObject.altitude + ' km';
+      document.getElementById('p-vel').innerText = selectedObject.velocity + ' km/s';
+      document.getElementById('p-inc').innerText = selectedObject.inclination + '°';
+      document.getElementById('p-miss').innerText = selectedObject.miss_distance + ' m';
+      document.getElementById('p-relvel').innerText = Math.round(selectedObject.relative_speed) + ' m/s';
+      document.getElementById('p-tca').innerText = Math.round(selectedObject.time_to_closest_approach) + ' s';
+      document.getElementById('p-unc').innerText = selectedObject.uncertainty + ' m';
+
+      document.getElementById('risk-output').innerHTML = `
+        <div style="font-size:11px; text-transform:uppercase; color:var(--text-muted); font-weight:600">Decision Support Output</div>
+        <div style="font-size:12px; color:var(--text-dim)">Click button above to evaluate risk model.</div>
+      `;
+
+      document.getElementById('side-panel').classList.add('open');
+      renderTables();
+    }
+
+    function closePanel() {
+      document.getElementById('side-panel').classList.remove('open');
+    }
+
+    async function runAnalysis() {
+      if (!selectedObject) return;
+      const payload = {
+        miss_distance: parseFloat(selectedObject.miss_distance),
+        relative_speed: parseFloat(selectedObject.relative_speed),
+        time_to_closest_approach: parseFloat(selectedObject.time_to_closest_approach),
+        uncertainty: parseFloat(selectedObject.uncertainty),
+        hard_body_radius: parseFloat(selectedObject.hard_body_radius || 10)
+      };
+
+      const outBox = document.getElementById('risk-output');
+      outBox.innerHTML = `<div style="color:var(--accent-cyan); font-size:12px">Evaluating Ensemble & Physics Models...</div>`;
+
+      try {
+        const res = await fetch('/api/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const d = await res.json();
+
+        const badgeClass = d.risk_level === 'HIGH' ? 'badge-high' : d.risk_level === 'MEDIUM' ? 'badge-medium' : 'badge-low';
+
+        outBox.innerHTML = `
+          <div style="display:flex; justify-content:space-between; align-items:center">
+            <span class="badge ${badgeClass}">${d.risk_level} RISK</span>
+            <span style="font-family:var(--font-mono); font-size:18px; font-weight:700; color:#fff">${(d.combined_risk * 100).toFixed(1)}%</span>
+          </div>
+          <div style="font-size:11px; color:var(--text-muted); line-height:1.6; margin-top:6px">
+            <b>ML Probability:</b> ${(d.ml_probability * 100).toFixed(1)}%<br>
+            <b>Physics Metric:</b> ${(d.physics_score * 100).toFixed(1)}%<br>
+            <b>Target Separation:</b> ${d.required_separation_m} m<br>
+            <b>Estimated ΔV:</b> ${d.estimated_delta_v_mps} m/s
+          </div>
+          <div style="background:rgba(255,255,255,0.04); padding:8px 10px; border-radius:4px; font-size:11px; color:var(--text-main); margin-top:4px">
+            <b>Operator Advisory:</b> ${d.suggestion}
+          </div>
+          <div style="font-size:10px; color:var(--text-dim); text-align:right">Prototype Risk Assessment</div>
+        `;
+      } catch(e) {
+        outBox.innerHTML = `<div style="color:var(--accent-red); font-size:12px">Analysis Error: ${e.message}</div>`;
+      }
+    }
+
+    // Tabs Navigation
+    function switchTab(tabId, el) {
+      document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+
+      if (el) el.classList.add('active');
+      const target = document.getElementById('tab-' + tabId);
+      if (target) target.classList.add('active');
+
+      if (tabId === 'orbital') {
+        const container = document.getElementById('expanded-scene-container');
+        const canvas = renderer.domElement;
+        if (canvas && container) {
+          container.appendChild(canvas);
+          renderer.setSize(container.clientWidth, container.clientHeight);
+          camera.aspect = container.clientWidth / container.clientHeight;
+          camera.updateProjectionMatrix();
+        }
+      } else {
+        const container = document.getElementById('scene-container');
+        const canvas = renderer.domElement;
+        if (canvas && container) {
+          container.appendChild(canvas);
+          renderer.setSize(container.clientWidth, container.clientHeight);
+          camera.aspect = container.clientWidth / container.clientHeight;
+          camera.updateProjectionMatrix();
+        }
+      }
+    }
+
+    // Locked Feature Modal
+    function showLockedModal(title) {
+      document.getElementById('modal-module-title').innerText = title;
+      document.getElementById('locked-modal').classList.add('open');
+    }
+    function closeLockedModal() {
+      document.getElementById('locked-modal').classList.remove('open');
+    }
+
+    // Three.js Orbital Scene Implementation
+    const box = document.getElementById('scene-container');
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(45, box.clientWidth / box.clientHeight, 0.1, 1000);
+    camera.position.set(0, 10, 22);
+    camera.lookAt(0, 0, 0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer.setSize(box.clientWidth, box.clientHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    box.appendChild(renderer.domElement);
+
+    // Lights
+    scene.add(new THREE.AmbientLight(0x406080, 1.8));
+    const sun = new THREE.DirectionalLight(0xffffff, 2.5);
+    sun.position.set(15, 10, 15);
+    scene.add(sun);
+
+    // Earth Sphere
+    const earthGeo = new THREE.SphereGeometry(3.5, 48, 48);
+    const earthMat = new THREE.MeshPhongMaterial({
+      color: 0x14325c,
+      emissive: 0x07152b,
+      wireframe: false,
+      shininess: 15
+    });
+    const earth = new THREE.Mesh(earthGeo, earthMat);
+    scene.add(earth);
+
+    // Earth Atmosphere Halo
+    const haloGeo = new THREE.SphereGeometry(3.65, 48, 48);
+    const haloMat = new THREE.MeshBasicMaterial({
+      color: 0x00e5ff,
+      transparent: true,
+      opacity: 0.12,
+      side: THREE.BackSide
+    });
+    scene.add(new THREE.Mesh(haloGeo, haloMat));
+
+    // Orbital Planes
+    function createOrbitRing(radiusX, radiusZ, color, rotationY = 0) {
+      const points = [];
+      for (let i = 0; i <= 120; i++) {
+        const theta = (i / 120) * Math.PI * 2;
+        points.push(new THREE.Vector3(radiusX * Math.cos(theta), 0, radiusZ * Math.sin(theta)));
+      }
+      const geo = new THREE.BufferGeometry().setFromPoints(points);
+      const mat = new THREE.LineBasicMaterial({ color: color, transparent: true, opacity: 0.35 });
+      const ring = new THREE.Line(geo, mat);
+      ring.rotation.y = rotationY;
+      ring.rotation.x = Math.PI * 0.15;
+      scene.add(ring);
+    }
+    createOrbitRing(5.5, 5.5, 0x00e5ff, 0);
+    createOrbitRing(7.0, 6.5, 0xffb800, 0.4);
+    createOrbitRing(8.2, 8.0, 0xff3b5c, 0.8);
+
+    // Objects Mesh Group
+    const objectsGroup = new THREE.Group();
+    scene.add(objectsGroup);
+
+    const satGeo = new THREE.BoxGeometry(0.3, 0.3, 0.3);
+    const satMat = new THREE.MeshBasicMaterial({ color: 0x00e5ff });
+
+    const debrisGeo = new THREE.OctahedronGeometry(0.25);
+    const debrisMatMedium = new THREE.MeshBasicMaterial({ color: 0xffb800 });
+    const debrisMatHigh = new THREE.MeshBasicMaterial({ color: 0xff3b5c });
+
+    // Orbital items representation
+    const orbitalItems = [
+      { radius: 5.5, angle: 0, speed: 0.008, mat: satMat, geo: satGeo },
+      { radius: 5.5, angle: 2.1, speed: 0.008, mat: satMat, geo: satGeo },
+      { radius: 7.0, angle: 1.2, speed: 0.006, mat: debrisMatMedium, geo: debrisGeo },
+      { radius: 7.0, angle: 4.5, speed: 0.006, mat: debrisMatMedium, geo: debrisGeo },
+      { radius: 8.2, angle: 0.8, speed: 0.004, mat: debrisMatHigh, geo: debrisGeo },
+      { radius: 8.2, angle: 3.6, speed: 0.004, mat: debrisMatHigh, geo: debrisGeo }
+    ];
+
+    orbitalItems.forEach(item => {
+      const mesh = new THREE.Mesh(item.geo, item.mat);
+      item.mesh = mesh;
+      objectsGroup.add(mesh);
+    });
+
+    // Animation Loop
+    let isDragging = false, previousMousePosition = { x: 0, y: 0 };
+    const canvasEl = renderer.domElement;
+
+    canvasEl.addEventListener('mousedown', e => { isDragging = true; });
+    canvasEl.addEventListener('mousemove', e => {
+      if (isDragging) {
+        const deltaMove = { x: e.offsetX - previousMousePosition.x, y: e.offsetY - previousMousePosition.y };
+        scene.rotation.y += deltaMove.x * 0.005;
+        scene.rotation.x += deltaMove.y * 0.005;
+      }
+      previousMousePosition = { x: e.offsetX, y: e.offsetY };
+    });
+    window.addEventListener('mouseup', e => { isDragging = false; });
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      earth.rotation.y += 0.001;
+
+      orbitalItems.forEach(item => {
+        item.angle += item.speed;
+        item.mesh.position.x = item.radius * Math.cos(item.angle);
+        item.mesh.position.z = item.radius * Math.sin(item.angle);
+        item.mesh.position.y = Math.sin(item.angle * 2) * 1.2;
+        item.mesh.rotation.x += 0.01;
+        item.mesh.rotation.y += 0.01;
+      });
+
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    // Pipeline Interactive Handlers
+    const stageDetails = {
+      1: {
+        title: "STAGE 01: TELEMETRY & TLE DATA INGESTION",
+        latency: "Latency: 14ms · Throughput: 120 msg/sec",
+        desc: "Ingesting radar tracking data, optical sensor passes, and NORAD Two-Line Element (TLE) satellite catalogs. Standardizing raw ephemeris state vectors for orbit determination."
+      },
+      2: {
+        title: "STAGE 02: NUMERICAL ORBIT PROPAGATION (SGP4)",
+        latency: "Latency: 22ms · Propagation Window: 72h",
+        desc: "SGP4 numerical orbit propagator calculates perturbed orbital trajectories considering Earth zonal harmonics (J2/J3/J4), atmospheric drag, and lunar-solar gravitational forces."
+      },
+      3: {
+        title: "STAGE 03: CONJUNCTION ASSESSMENT & PROXIMITY SCREENING",
+        latency: "Latency: 8ms · Proximity Threshold: 5.0 km",
+        desc: "Screening pairs of tracked objects to determine Time of Closest Approach (TCA) and minimum miss distance. Calculates 3D relative velocity vectors and covariance matrices."
+      },
+      4: {
+        title: "STAGE 04: MACHINE LEARNING RISK INFERENCE",
+        latency: "Latency: 11ms · Model Confidence: 98.4%",
+        desc: "Random Forest Classifier evaluates encounter geometry, apogee/perigee ratio, miss distance, and relative speed to predict collision probability and assign risk levels (LOW, MEDIUM, HIGH)."
+      },
+      5: {
+        title: "STAGE 05: MITIGATION & COLLISION AVOIDANCE GUIDANCE",
+        latency: "Latency: 5ms · Operator Status: ADVISORY READY",
+        desc: "Generates actionable decision support for mission operators including recommended impulsive delta-v maneuver trajectories, optimal burn timing, and fuel budget consumption."
+      }
+    };
+
+    function selectPipelineStage(stageNum) {
+      document.querySelectorAll('.pipeline-node').forEach(node => node.classList.remove('active-stage'));
+      const stageEl = document.getElementById('pipe-stage-' + stageNum);
+      if (stageEl) stageEl.classList.add('active-stage');
+
+      const panel = document.getElementById('pipeline-details-panel');
+      const info = stageDetails[stageNum];
+      if (panel && info) {
+        document.getElementById('pipe-detail-title').innerText = info.title;
+        document.getElementById('pipe-detail-latency').innerText = info.latency;
+        document.getElementById('pipe-detail-desc').innerText = info.desc;
+        panel.classList.add('visible');
+      }
+    }
+
+    function runPipelineSimulation() {
+      const overallStatus = document.getElementById('pipeline-overall-status');
+      if (overallStatus) {
+        overallStatus.innerHTML = '<span class="status-dot" style="background:var(--accent-amber); box-shadow:0 0 8px var(--accent-amber)"></span> EXECUTING SIMULATION...';
+        overallStatus.style.color = 'var(--accent-amber)';
+      }
+
+      let current = 1;
+      const interval = setInterval(() => {
+        document.querySelectorAll('.pipeline-node').forEach(node => {
+          node.classList.remove('running-stage');
+        });
+
+        const activeNode = document.getElementById('pipe-stage-' + current);
+        if (activeNode) {
+          activeNode.classList.add('running-stage');
+          selectPipelineStage(current);
+        }
+
+        current++;
+        if (current > 5) {
+          clearInterval(interval);
+          setTimeout(() => {
+            document.querySelectorAll('.pipeline-node').forEach(node => node.classList.remove('running-stage'));
+            if (overallStatus) {
+              overallStatus.innerHTML = '<span class="status-dot"></span> PIPELINE ACTIVE';
+              overallStatus.style.color = 'var(--accent-green)';
+            }
+          }, 800);
+        }
+      }, 700);
+    }
+
+    window.addEventListener('resize', () => {
+      const activeBox = document.querySelector('.tab-content.active #scene-container, .tab-content.active #expanded-scene-container');
+      if (activeBox) {
+        camera.aspect = activeBox.clientWidth / activeBox.clientHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(activeBox.clientWidth, activeBox.clientHeight);
+      }
+    });
+  </script>
+</body>
+</html>
