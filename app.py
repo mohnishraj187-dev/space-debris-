@@ -1,6 +1,7 @@
 import json, math, random, csv, io, zipfile, os
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from api.orbits import live_orbits
 
 FEATURES = ["miss_distance", "relative_speed", "time_to_closest_approach", "uncertainty", "hard_body_radius"]
 
@@ -65,6 +66,7 @@ def dataset_events(limit=30):
                     "event_id": row.get("event_id", "OBJ-000"),
                     "name": row.get("name", "Space Object"),
                     "type": row.get("type", "DEBRIS"),
+                    "norad_id": row.get("norad_id", ""),
                     "altitude": row.get("altitude", "450"),
                     "velocity": row.get("velocity", "7.5"),
                     "inclination": row.get("inclination", "51.6"),
@@ -104,17 +106,25 @@ def analyze(x):
     dt=max(60.0,x["time_to_closest_approach"])
     dv=max(.01,required/(2*dt)) if required else 0.0
     action="MONITOR" if not required or combined<.30 else "REVIEW MANEUVER"
-    if level=="HIGH": suggestion="Prioritize immediate operator review; compare along-track, radial, and cross-track options before TCA."
-    elif level=="MEDIUM": suggestion="Increase tracking frequency and prepare a low-Delta-V maneuver alternative."
-    else: suggestion="Continue monitoring; no maneuver is suggested by this prototype."
+    if level=="HIGH":
+        suggestion="Escalate to flight dynamics now. Validate the latest conjunction data, evaluate an along-track avoidance option, and obtain operator approval before TCA."
+        plan=["Confirm the orbit solution, covariance, and TCA with an independent data source.","Screen along-track, radial, and cross-track maneuver options against all tracked objects.","Select a reversible, fuel-aware option and obtain human flight-operations approval.","Reassess immediately after any maneuver and continue tracking through TCA."]
+    elif level=="MEDIUM":
+        suggestion="Increase tracking frequency and prepare a low-Delta-V maneuver alternative."
+        plan=["Refresh tracking data.","Prepare a candidate maneuver for operator review.","Reassess at the next conjunction update."]
+    else:
+        suggestion="Continue monitoring; no maneuver is suggested by this prototype."
+        plan=["Continue routine tracking and reassess when new conjunction data arrives."]
     direction="along-track candidate" if level!="LOW" else "none"
-    return {"ml_probability":round(p,4),"physics_score":round(physics,4),"combined_risk":round(combined,4),"risk_level":level,"required_separation_m":round(required,2),"estimated_delta_v_mps":round(dv,5),"action":action,"suggestion":suggestion,"direction":direction,"model":"31-tree Random Forest-style ensemble"}
+    return {"ml_probability":round(p,4),"physics_score":round(physics,4),"combined_risk":round(combined,4),"risk_level":level,"required_separation_m":round(required,2),"estimated_delta_v_mps":round(dv,5),"action":action,"suggestion":suggestion,"direction":direction,"advisory_plan":plan,"advisory_disclaimer":"Decision support only — never execute a maneuver without validated operational data and qualified human approval.","model":"31-tree Random Forest-style ensemble"}
 
 HTML=Path(__file__).with_name("index.html").read_text()
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path=="/api/events":
             body=json.dumps(dataset_events()).encode(); self.send_response(200); self.send_header("Content-Type","application/json"); self.send_header("Content-Length",str(len(body))); self.end_headers(); self.wfile.write(body); return
+        if self.path=="/api/orbits":
+            body=json.dumps({"orbits":live_orbits(),"source":"CelesTrak public GP/TLE data","refresh_seconds":7200,"note":"Only objects with an exact NORAD ID have live propagated positions."}).encode(); self.send_response(200); self.send_header("Content-Type","application/json"); self.send_header("Content-Length",str(len(body))); self.end_headers(); self.wfile.write(body); return
         self.send_response(200); self.send_header("Content-Type","text/html"); self.end_headers(); self.wfile.write(HTML.encode())
     def do_POST(self):
         if self.path!="/api/analyze": self.send_error(404); return

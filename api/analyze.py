@@ -65,9 +65,20 @@ def analyze(x):
     dt = max(60.0, x["time_to_closest_approach"])
     dv = max(.01, required / (2 * dt)) if required else 0.0
     action = "MONITOR" if not required or combined < .30 else "REVIEW MANEUVER"
-    if level == "HIGH": suggestion = "Prioritize immediate operator review; compare along-track, radial, and cross-track options before TCA."
-    elif level == "MEDIUM": suggestion = "Increase tracking frequency and prepare a low-Delta-V maneuver alternative."
-    else: suggestion = "Continue monitoring; no maneuver is suggested by this prototype."
+    if level == "HIGH":
+        suggestion = "Escalate to flight dynamics now. Validate the latest conjunction data, evaluate an along-track avoidance option, and obtain operator approval before TCA."
+        plan = [
+            "Confirm the orbit solution, covariance, and TCA with an independent data source.",
+            "Screen along-track, radial, and cross-track maneuver options against all tracked objects.",
+            "Select a reversible, fuel-aware option and obtain human flight-operations approval.",
+            "Reassess immediately after any maneuver and continue tracking through TCA."
+        ]
+    elif level == "MEDIUM":
+        suggestion = "Increase tracking frequency and prepare a low-Delta-V maneuver alternative."
+        plan = ["Refresh tracking data.", "Prepare a candidate maneuver for operator review.", "Reassess at the next conjunction update."]
+    else:
+        suggestion = "Continue monitoring; no maneuver is suggested by this prototype."
+        plan = ["Continue routine tracking and reassess when new conjunction data arrives."]
     direction = "along-track candidate" if level != "LOW" else "none"
     return {
         "ml_probability": round(p, 4),
@@ -79,6 +90,8 @@ def analyze(x):
         "action": action,
         "suggestion": suggestion,
         "direction": direction,
+        "advisory_plan": plan,
+        "advisory_disclaimer": "Decision support only — never execute a maneuver without validated operational data and qualified human approval.",
         "model": "31-tree Random Forest-style ensemble"
     }
 

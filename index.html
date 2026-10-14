@@ -921,7 +921,7 @@
           <div id="scene-container">
             <div class="scene-overlay">
               <h4>CATALOG ORBIT VISUALIZATION</h4>
-              <p>15 tracked objects · Relative orbital positions · Not to scale</p>
+              <p id="orbit-data-status">15 tracked objects · Loading live orbit data…</p>
             </div>
             <div class="scene-legend">
               <div class="legend-item"><span class="legend-dot" style="background:#00e5ff"></span> Satellite</div>
@@ -1294,6 +1294,8 @@
 
   <!-- Three.js CDN -->
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+  <!-- SGP4 propagator for public TLE data -->
+  <script src="https://cdn.jsdelivr.net/npm/satellite.js@5.0.0/dist/satellite.min.js"></script>
 
   <script>
     // System Data State
@@ -1316,6 +1318,7 @@
         renderTables();
         updateStats();
         updateOrbitalObjects(objectsData);
+        loadLiveOrbits();
       } catch(e) {
         console.error("Failed loading data", e);
       }
@@ -1327,6 +1330,28 @@
       document.getElementById('stat-debris').innerText = objectsData.filter(o => o.type === 'DEBRIS').length;
       document.getElementById('stat-sats').innerText = objectsData.filter(o => o.type === 'SATELLITE').length;
       document.getElementById('stat-risks').innerText = objectsData.filter(o => o.status === 'HIGH' || o.status === 'MEDIUM').length;
+    }
+
+    async function loadLiveOrbits() {
+      const status = document.getElementById('orbit-data-status');
+      try {
+        const res = await fetch('/api/orbits');
+        if (!res.ok) throw new Error('orbit source unavailable');
+        const payload = await res.json();
+        let liveCount = 0;
+        objectsData.forEach(item => {
+          const tle = payload.orbits && payload.orbits[item.event_id];
+          if (tle && window.satellite) {
+            item.liveOrbit = { ...tle, satrec: satellite.twoline2satrec(tle.tle1, tle.tle2) };
+            liveCount++;
+          }
+        });
+        updateOrbitalObjects(objectsData);
+        status.innerText = `${objectsData.length} tracked objects · ${liveCount} live SGP4 positions · ${objectsData.length - liveCount} simulated catalog entries`;
+      } catch (error) {
+        status.innerText = `${objectsData.length} tracked objects · Simulated fallback (live orbit feed unavailable)`;
+        console.warn('Live orbit data unavailable:', error);
+      }
     }
 
     // Render Tables
@@ -1475,7 +1500,11 @@
           <div style="background:rgba(255,255,255,0.04); padding:8px 10px; border-radius:4px; font-size:11px; color:var(--text-main); margin-top:4px">
             <b>Operator Advisory:</b> ${d.suggestion}
           </div>
-          <div style="font-size:10px; color:var(--text-dim); text-align:right">Prototype Risk Assessment</div>
+          <div style="background:rgba(255,59,92,0.07); border-left:2px solid var(--accent-red); padding:8px 10px; font-size:11px; color:var(--text-main); margin-top:6px">
+            <b>AI-Assisted Avoidance Checklist</b><br>
+            ${(d.advisory_plan || []).map(step => `• ${step}`).join('<br>')}
+          </div>
+          <div style="font-size:10px; color:var(--text-dim); margin-top:5px">${d.advisory_disclaimer || 'Prototype Risk Assessment'}</div>
         `;
       } catch(e) {
         outBox.innerHTML = `<div style="color:var(--accent-red); font-size:12px">Analysis Error: ${e.message}</div>`;
@@ -1612,8 +1641,30 @@
       return 0x72d572;
     }
 
-    // Builds one visible orbital path and marker for every object in the catalog.
-    // Positions are a visual representation based on the static demo fields, not live ephemerides.
+    function eciToScene(position) {
+      const earthRadiusKm = 6371;
+      const scale = 3.5 / earthRadiusKm;
+      return new THREE.Vector3(position.x * scale, position.z * scale, -position.y * scale);
+    }
+
+    function propagatedPosition(satrec, time) {
+      const state = satellite.propagate(satrec, time);
+      return state.position ? eciToScene(state.position) : null;
+    }
+
+    function buildLivePath(satrec) {
+      const points = [];
+      const now = Date.now();
+      for (let step = -48; step <= 48; step++) {
+        const point = propagatedPosition(satrec, new Date(now + step * 90 * 1000));
+        if (point) points.push(point);
+      }
+      return points;
+    }
+
+    // Builds one visible path and marker for every catalog object. Markers with
+    // a verified NORAD ID use fresh TLEs and SGP4 propagation; other catalog
+    // labels keep their clearly identified static-demo fallback.
     function updateOrbitalObjects(data) {
       orbitalItems.forEach(item => {
         objectsGroup.remove(item.mesh);
@@ -1631,29 +1682,39 @@
         const phase = (index / Math.max(data.length, 1)) * Math.PI * 2;
         const ascendingNode = (index * 2.399) % (Math.PI * 2);
         const color = riskColor(item);
-        const points = [];
-        for (let step = 0; step <= 96; step++) {
-          const theta = (step / 96) * Math.PI * 2;
-          const x = radius * Math.cos(theta);
-          const y = radius * Math.sin(theta) * Math.sin(inclination);
-          const z = radius * Math.sin(theta) * Math.cos(inclination);
-          points.push(new THREE.Vector3(x, y, z));
+        const liveOrbit = item.liveOrbit;
+        let points = liveOrbit ? buildLivePath(liveOrbit.satrec) : [];
+        if (points.length < 3) {
+          points = [];
+          for (let step = 0; step <= 96; step++) {
+            const theta = (step / 96) * Math.PI * 2;
+            points.push(new THREE.Vector3(
+              radius * Math.cos(theta),
+              radius * Math.sin(theta) * Math.sin(inclination),
+              radius * Math.sin(theta) * Math.cos(inclination)
+            ));
+          }
         }
         const path = new THREE.Line(
           new THREE.BufferGeometry().setFromPoints(points),
           new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.19 })
         );
-        path.rotation.y = ascendingNode;
+        if (!liveOrbit) path.rotation.y = ascendingNode;
         const mesh = new THREE.Mesh(
           item.type === 'SATELLITE' ? satelliteGeo.clone() : debrisGeo.clone(),
           new THREE.MeshBasicMaterial({ color })
         );
         objectsGroup.add(path, mesh);
-        return { item, mesh, path, radius, inclination, ascendingNode, angle: phase, speed: 0.0018 + (index % 5) * 0.00025 };
+        return { item, mesh, path, radius, inclination, ascendingNode, angle: phase, speed: 0.0018 + (index % 5) * 0.00025, liveOrbit };
       });
     }
 
     function positionOrbitalItem(orbitalItem) {
+      if (orbitalItem.liveOrbit) {
+        const position = propagatedPosition(orbitalItem.liveOrbit.satrec, new Date());
+        if (position) orbitalItem.mesh.position.copy(position);
+        return;
+      }
       const { radius, angle, inclination, ascendingNode, mesh } = orbitalItem;
       const x = radius * Math.cos(angle);
       const y = radius * Math.sin(angle) * Math.sin(inclination);

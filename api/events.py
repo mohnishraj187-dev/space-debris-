@@ -15,6 +15,7 @@ def dataset_events(limit=30):
                     "event_id": row.get("event_id", "OBJ-000"),
                     "name": row.get("name", "Space Object"),
                     "type": row.get("type", "DEBRIS"),
+                    "norad_id": row.get("norad_id", ""),
                     "altitude": row.get("altitude", "450"),
                     "velocity": row.get("velocity", "7.5"),
                     "inclination": row.get("inclination", "51.6"),
