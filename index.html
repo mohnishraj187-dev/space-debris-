@@ -920,8 +920,8 @@
           </div>
           <div id="scene-container">
             <div class="scene-overlay">
-              <h4>LIVE SIMULATION DEMO DATA</h4>
-              <p>Parametric LEO Orbit Simulation · Not to scale</p>
+              <h4>CATALOG ORBIT VISUALIZATION</h4>
+              <p>15 tracked objects · Relative orbital positions · Not to scale</p>
             </div>
             <div class="scene-legend">
               <div class="legend-item"><span class="legend-dot" style="background:#00e5ff"></span> Satellite</div>
@@ -1315,6 +1315,7 @@
         objectsData = await res.json();
         renderTables();
         updateStats();
+        updateOrbitalObjects(objectsData);
       } catch(e) {
         console.error("Failed loading data", e);
       }
@@ -1559,8 +1560,8 @@
     });
     scene.add(new THREE.Mesh(haloGeo, haloMat));
 
-    // Orbital Planes
-    function createOrbitRing(radiusX, radiusZ, color, rotationY = 0) {
+    // Orbital planes provide context for the catalog object paths.
+    function createOrbitRing(radiusX, radiusZ, color, rotationY = 0, inclination = 0) {
       const points = [];
       for (let i = 0; i <= 120; i++) {
         const theta = (i / 120) * Math.PI * 2;
@@ -1570,39 +1571,78 @@
       const mat = new THREE.LineBasicMaterial({ color: color, transparent: true, opacity: 0.35 });
       const ring = new THREE.Line(geo, mat);
       ring.rotation.y = rotationY;
-      ring.rotation.x = Math.PI * 0.15;
+      ring.rotation.x = inclination;
       scene.add(ring);
     }
-    createOrbitRing(5.5, 5.5, 0x00e5ff, 0);
-    createOrbitRing(7.0, 6.5, 0xffb800, 0.4);
-    createOrbitRing(8.2, 8.0, 0xff3b5c, 0.8);
+    createOrbitRing(5.3, 5.3, 0x00e5ff, 0, 0.35);
+    createOrbitRing(6.7, 6.7, 0xffb800, 0.6, 0.85);
+    createOrbitRing(8.1, 8.1, 0xff3b5c, 1.1, 1.25);
 
     // Objects Mesh Group
     const objectsGroup = new THREE.Group();
     scene.add(objectsGroup);
 
-    const satGeo = new THREE.BoxGeometry(0.3, 0.3, 0.3);
-    const satMat = new THREE.MeshBasicMaterial({ color: 0x00e5ff });
+    const satelliteGeo = new THREE.BoxGeometry(0.22, 0.22, 0.22);
+    const debrisGeo = new THREE.OctahedronGeometry(0.16);
+    let orbitalItems = [];
 
-    const debrisGeo = new THREE.OctahedronGeometry(0.25);
-    const debrisMatMedium = new THREE.MeshBasicMaterial({ color: 0xffb800 });
-    const debrisMatHigh = new THREE.MeshBasicMaterial({ color: 0xff3b5c });
+    function riskColor(item) {
+      if (item.type === 'SATELLITE') return 0x00e5ff;
+      if (item.status === 'HIGH') return 0xff3b5c;
+      if (item.status === 'MEDIUM') return 0xffb800;
+      return 0x72d572;
+    }
 
-    // Orbital items representation
-    const orbitalItems = [
-      { radius: 5.5, angle: 0, speed: 0.008, mat: satMat, geo: satGeo },
-      { radius: 5.5, angle: 2.1, speed: 0.008, mat: satMat, geo: satGeo },
-      { radius: 7.0, angle: 1.2, speed: 0.006, mat: debrisMatMedium, geo: debrisGeo },
-      { radius: 7.0, angle: 4.5, speed: 0.006, mat: debrisMatMedium, geo: debrisGeo },
-      { radius: 8.2, angle: 0.8, speed: 0.004, mat: debrisMatHigh, geo: debrisGeo },
-      { radius: 8.2, angle: 3.6, speed: 0.004, mat: debrisMatHigh, geo: debrisGeo }
-    ];
+    // Builds one visible orbital path and marker for every object in the catalog.
+    // Positions are a visual representation based on the static demo fields, not live ephemerides.
+    function updateOrbitalObjects(data) {
+      orbitalItems.forEach(item => {
+        objectsGroup.remove(item.mesh);
+        objectsGroup.remove(item.path);
+        item.mesh.geometry.dispose();
+        item.mesh.material.dispose();
+        item.path.geometry.dispose();
+        item.path.material.dispose();
+      });
 
-    orbitalItems.forEach(item => {
-      const mesh = new THREE.Mesh(item.geo, item.mat);
-      item.mesh = mesh;
-      objectsGroup.add(mesh);
-    });
+      orbitalItems = data.map((item, index) => {
+        const altitude = Number(item.altitude) || 500;
+        const inclination = ((Number(item.inclination) || 45) * Math.PI) / 180;
+        const radius = 4.25 + Math.min(altitude, 1400) / 650;
+        const phase = (index / Math.max(data.length, 1)) * Math.PI * 2;
+        const ascendingNode = (index * 2.399) % (Math.PI * 2);
+        const color = riskColor(item);
+        const points = [];
+        for (let step = 0; step <= 96; step++) {
+          const theta = (step / 96) * Math.PI * 2;
+          const x = radius * Math.cos(theta);
+          const y = radius * Math.sin(theta) * Math.sin(inclination);
+          const z = radius * Math.sin(theta) * Math.cos(inclination);
+          points.push(new THREE.Vector3(x, y, z));
+        }
+        const path = new THREE.Line(
+          new THREE.BufferGeometry().setFromPoints(points),
+          new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.19 })
+        );
+        path.rotation.y = ascendingNode;
+        const mesh = new THREE.Mesh(
+          item.type === 'SATELLITE' ? satelliteGeo.clone() : debrisGeo.clone(),
+          new THREE.MeshBasicMaterial({ color })
+        );
+        objectsGroup.add(path, mesh);
+        return { item, mesh, path, radius, inclination, ascendingNode, angle: phase, speed: 0.0018 + (index % 5) * 0.00025 };
+      });
+    }
+
+    function positionOrbitalItem(orbitalItem) {
+      const { radius, angle, inclination, ascendingNode, mesh } = orbitalItem;
+      const x = radius * Math.cos(angle);
+      const y = radius * Math.sin(angle) * Math.sin(inclination);
+      const z = radius * Math.sin(angle) * Math.cos(inclination);
+      mesh.position.set(x, y, z);
+      mesh.rotateY(0.02);
+      mesh.position.applyAxisAngle(new THREE.Vector3(0, 1, 0), ascendingNode);
+    }
 
     // Animation Loop
     let isDragging = false, previousMousePosition = { x: 0, y: 0 };
@@ -1626,11 +1666,7 @@
 
       orbitalItems.forEach(item => {
         item.angle += item.speed;
-        item.mesh.position.x = item.radius * Math.cos(item.angle);
-        item.mesh.position.z = item.radius * Math.sin(item.angle);
-        item.mesh.position.y = Math.sin(item.angle * 2) * 1.2;
-        item.mesh.rotation.x += 0.01;
-        item.mesh.rotation.y += 0.01;
+        positionOrbitalItem(item);
       });
 
       renderer.render(scene, camera);
