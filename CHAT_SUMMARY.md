@@ -25,8 +25,8 @@ It contains ESA Conjunction Data Messages from 2015–2019, including training/t
 - `app.py` — Python server, dataset loading, Random Forest-style model, risk calculations and ΔV estimate.
 - `index.html` — dashboard and Three.js 3D showcase.
 - `README.md` — formulas, limitations and deployment instructions.
-- `render.yaml` — Render deployment configuration.
-- `data/sample_events.csv` — small fallback dataset for Render.
+- `vercel.json` — Vercel routing configuration for the serverless API.
+- `data/sample_events.csv` — small fallback dataset for the dashboard.
 
 ## Algorithms and formulas
 
@@ -63,7 +63,7 @@ This is a simplified academic prototype, not a flight-certified maneuver planner
 
 The dashboard contains an illustrative Three.js visualization showing Earth, a blue target satellite orbit, an orange debris orbit, a red closest-approach marker, and a green illustrative avoidance path. It is not yet a full SGP4 orbital propagator and is marked as not to scale.
 
-## Git and Render
+## Git and Vercel
 
 GitHub repository:
 
@@ -75,15 +75,15 @@ Recent commits:
 
 ```text
 024d0d3 Add orbital collision avoidance IDP prototype
-21a8a18 Prepare prototype for Render deployment
+5a1fd67 Add Vercel configuration and serverless API handlers
 1dd253e Fix 3D showcase rendering without camera controls
 c3b13f6 Improve 3D event visibility
 ```
 
-The Render service is named `orbitalguard-idp`. After pushing the latest commit, Render redeploys automatically. The public URL appears on the Render service page when status is `Live`.
+Deploy the repository with Vercel. The `vercel.json` configuration maps `/api/events` and `/api/analyze` to the Python serverless handlers.
 
 ## Honest project status
 
-Implemented: dashboard, ESA event selection, risk model, physics scoring, simplified ΔV recommendation, 3D visualization and Render configuration.
+Implemented: dashboard, ESA event selection, risk model, physics scoring, simplified ΔV recommendation, 3D visualization and Vercel configuration.
 
 Not yet implemented: Random Forest training directly on the full ESA CSV, real SGP4 propagation, validated maneuver optimization, full covariance ellipsoids, LLM explanation layer and spacecraft control.

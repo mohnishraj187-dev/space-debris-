@@ -1,8 +1,0 @@
-services:
-  - type: web
-    name: orbitalguard-idp
-    runtime: python
-    plan: free
-    buildCommand: ""
-    startCommand: "python3 app.py"
-    autoDeploy: true
